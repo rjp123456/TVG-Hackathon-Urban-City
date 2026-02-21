@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 type HexTileProps = {
   district: District;
+  label: string;
   points: string;
   cx: number;
   cy: number;
@@ -25,6 +26,7 @@ const stressClass = (stress: number) => {
 
 export function HexTile({
   district,
+  label,
   points,
   cx,
   cy,
@@ -60,7 +62,7 @@ export function HexTile({
         textAnchor="middle"
         dominantBaseline="middle"
       >
-        {district.name.split(" ")[0]}
+        {label}
       </text>
 
       {showCriticalShield && (

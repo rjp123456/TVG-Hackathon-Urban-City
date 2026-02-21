@@ -21,7 +21,6 @@ type TopBarProps = {
   budgetM: number;
   interventionsCount: number;
   liveMode: boolean;
-  lastSyncedISO: string | null;
   onRefreshLive: () => void;
   liveRefreshing: boolean;
 };
@@ -43,7 +42,6 @@ export function TopBar({
   budgetM,
   interventionsCount,
   liveMode,
-  lastSyncedISO,
   onRefreshLive,
   liveRefreshing,
 }: TopBarProps) {
@@ -54,11 +52,6 @@ export function TopBar({
         <span className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-400/15 px-3 py-1 text-xs font-medium uppercase tracking-[0.2em] text-emerald-300">
           Live Simulation
         </span>
-        {liveMode && (
-          <span className="inline-flex items-center rounded-full border border-cyan-300/50 bg-cyan-300/12 px-3 py-1 text-xs text-cyan-200">
-            Live ERCOT Data - Updated {lastSyncedISO ? new Date(lastSyncedISO).toLocaleTimeString() : "now"}
-          </span>
-        )}
       </div>
 
       <div className="flex min-w-[340px] flex-1 flex-col gap-1 xl:max-w-[700px]">
@@ -128,13 +121,6 @@ export function TopBar({
         >
           {liveRefreshing ? "Syncing..." : "Refresh"}
         </button>
-
-        <div className="rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-slate-300">
-          <div>Last Synced</div>
-          <div className="text-sm font-semibold text-cyan-300">
-            {lastSyncedISO ? new Date(lastSyncedISO).toLocaleTimeString() : "-"}
-          </div>
-        </div>
 
         <div className="rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-slate-300">
           <div>Carbon Intensity</div>

@@ -23,6 +23,16 @@ type HoverState = {
 } | null;
 
 const HEX_SIZE = 74;
+const tileLabels: Record<DistrictId, string> = {
+  downtown: "Downtown",
+  industrial: "Airport",
+  university: "UT",
+  medical: "Medical",
+  eastside: "East",
+  north: "North",
+  south: "South",
+  waterfront: "Riverside",
+};
 
 const toPixel = (q: number, r: number, size: number) => ({
   x: size * (Math.sqrt(3) * q + (Math.sqrt(3) / 2) * r),
@@ -58,10 +68,10 @@ export function HexCityMap({
 
     const xs = positions.map((d) => d.cx);
     const ys = positions.map((d) => d.cy);
-    const minX = Math.min(...xs) - HEX_SIZE * 2;
-    const maxX = Math.max(...xs) + HEX_SIZE * 2;
-    const minY = Math.min(...ys) - HEX_SIZE * 2;
-    const maxY = Math.max(...ys) + HEX_SIZE * 2;
+    const minX = Math.min(...xs) - HEX_SIZE * 1.9;
+    const maxX = Math.max(...xs) + HEX_SIZE * 1.9;
+    const minY = Math.min(...ys) - HEX_SIZE * 1.1;
+    const maxY = Math.max(...ys) + HEX_SIZE * 1.2;
 
     return {
       positions,
@@ -80,13 +90,13 @@ export function HexCityMap({
     : null;
 
   return (
-    <div className="glass-panel relative h-full min-h-[560px] overflow-hidden p-3 md:p-4">
+    <div className="glass-panel relative h-full min-h-[420px] overflow-hidden p-3 md:p-4">
       <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
         <span className="uppercase tracking-[0.2em] text-emerald-300/90">Transformer Risk Model</span>
         <span>T+{selectedHour}h</span>
       </div>
 
-      <svg viewBox={projected.viewBox} className="h-[calc(100%-26px)] w-full">
+      <svg viewBox={projected.viewBox} preserveAspectRatio="xMidYMin meet" className="h-full w-full">
         <g>
           {edges.map(([a, b], idx) => {
             const p1 = projected.byId[a];
@@ -117,6 +127,7 @@ export function HexCityMap({
               <HexTile
                 key={district.id}
                 district={district}
+                label={tileLabels[district.id]}
                 points={district.points}
                 cx={district.cx}
                 cy={district.cy}

@@ -87,7 +87,7 @@ export default function Page() {
   const [budgetWarning, setBudgetWarning] = useState("");
   const [uiWarning, setUiWarning] = useState("");
 
-  const [liveMode, setLiveMode] = useState(false);
+  const liveMode = true;
   const [liveInputs, setLiveInputs] = useState<LiveInputs | null>(null);
   const [liveSyncedAtISO, setLiveSyncedAtISO] = useState<string | null>(null);
   const [liveFetchPending, setLiveFetchPending] = useState(false);
@@ -185,7 +185,6 @@ export default function Page() {
       setLiveSyncedAtISO(payload.timestampISO);
       setUiWarning("");
     } catch {
-      setLiveMode(false);
       setLiveInputs(null);
       setUiWarning("");
     } finally {
@@ -194,10 +193,9 @@ export default function Page() {
   };
 
   useEffect(() => {
-    if (liveMode) void fetchLiveData(false);
-    if (!liveMode) setLiveInputs(null);
+    void fetchLiveData(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveMode]);
+  }, []);
 
   const tryBudgetedChange = (deltaCostM: number, apply: () => void) => {
     const affordable = deltaCostM <= 0 || canAffordChange(params.budgetM, budgetUsedM, deltaCostM);
@@ -335,8 +333,6 @@ export default function Page() {
           budgetM={params.budgetM}
           interventionsCount={interventionsCount}
           liveMode={liveMode}
-          lastSyncedISO={liveSyncedAtISO}
-          onToggleLiveMode={() => setLiveMode((v) => !v)}
           onRefreshLive={() => void fetchLiveData(true)}
           liveRefreshing={liveFetchPending}
         />
