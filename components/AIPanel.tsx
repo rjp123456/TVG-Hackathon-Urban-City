@@ -1,11 +1,7 @@
 "use client";
 
 import { districts } from "@/lib/cityData";
-import {
-  formatImpact,
-  formatOverloadDelta,
-  formatResilienceDelta,
-} from "@/lib/recommendations";
+import { actionImpactLine, costChip } from "@/lib/recommendations";
 import { RecommendationOutput, SimulationResult, DistrictId } from "@/types/city";
 
 type AIPanelProps = {
@@ -13,9 +9,10 @@ type AIPanelProps = {
   selectedHour: number;
   selectedDistrictId: DistrictId;
   recs: RecommendationOutput;
+  opsBriefText: string;
 };
 
-export function AIPanel({ result, selectedHour, selectedDistrictId, recs }: AIPanelProps) {
+export function AIPanel({ result, selectedHour, selectedDistrictId, recs, opsBriefText }: AIPanelProps) {
   const district = districts.find((d) => d.id === selectedDistrictId) ?? districts[0];
   const load = result.perDistrict[district.id].loadMW[selectedHour];
   const cap = result.perDistrict[district.id].capMW[selectedHour];
@@ -27,7 +24,13 @@ export function AIPanel({ result, selectedHour, selectedDistrictId, recs }: AIPa
       <section className="glass-panel p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm uppercase tracking-[0.18em] text-emerald-300">AI Command Panel</h2>
-          <span className="text-xs text-slate-400">T+{selectedHour}h</span>
+          <button
+            type="button"
+            onClick={() => navigator.clipboard.writeText(opsBriefText)}
+            className="rounded-md border border-cyan-300/40 bg-cyan-300/10 px-2 py-1 text-[10px] text-cyan-100"
+          >
+            Copy Ops Brief
+          </button>
         </div>
 
         <div className="mt-3 rounded-lg border border-white/10 bg-black/35 p-3">
@@ -63,44 +66,39 @@ export function AIPanel({ result, selectedHour, selectedDistrictId, recs }: AIPa
       </section>
 
       <section className="glass-panel flex-1 p-4">
-        <h3 className="text-xs uppercase tracking-[0.16em] text-slate-300">Recommended Actions</h3>
+        <h3 className="text-xs uppercase tracking-[0.16em] text-slate-300">Counterfactual Actions</h3>
         <div className="mt-2 space-y-2">
           {recs.actions.map((action) => (
-            <article key={action.title} className="rounded-md border border-white/10 bg-black/35 p-3 text-xs text-slate-200">
+            <article
+              key={action.id}
+              className={`rounded-md border p-3 text-xs ${
+                action.overBudget
+                  ? "border-rose-400/35 bg-rose-500/10 text-slate-300"
+                  : "border-white/10 bg-black/35 text-slate-200"
+              }`}
+            >
               <div className="flex items-center justify-between gap-2">
                 <h4 className="font-medium text-white">{action.title}</h4>
-                <span className="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-2 py-0.5 text-[10px] text-emerald-300">
-                  {action.confidence}
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="rounded-full border border-emerald-300/30 bg-emerald-300/10 px-2 py-0.5 text-[10px] text-emerald-300">
+                    {action.confidence}
+                  </span>
+                  <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2 py-0.5 text-[10px] text-cyan-200">
+                    {costChip(action)}
+                  </span>
+                </div>
               </div>
               <p className="mt-1 text-slate-300">{action.rationale}</p>
-              <p className="mt-1 text-cyan-200">{action.impact}</p>
+              <p className="mt-1 text-cyan-200">Projected Impact: {actionImpactLine(action)}</p>
+              <p className="mt-1 text-slate-400">Drivers: {action.drivers}</p>
+              {action.bestBangForBuck && (
+                <span className="mt-2 inline-flex rounded-full border border-emerald-300/35 bg-emerald-300/10 px-2 py-0.5 text-[10px] text-emerald-300">
+                  Best Bang-for-Buck
+                </span>
+              )}
+              {action.overBudget && <p className="mt-2 text-rose-300">Over budget</p>}
             </article>
           ))}
-        </div>
-
-        <div className="mt-3 rounded-md border border-white/10 bg-black/35 p-3 text-xs text-slate-200">
-          <div className="mb-1 uppercase tracking-[0.14em] text-slate-400">Impact Summary vs Baseline</div>
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <div className="text-slate-400">Peak Δ</div>
-              <div className={recs.impactSummary.peakDelta <= 0 ? "text-emerald-300" : "text-amber-300"}>
-                {formatImpact(recs.impactSummary.peakDelta, " MW")}
-              </div>
-            </div>
-            <div>
-              <div className="text-slate-400">Overloads Δ</div>
-              <div className={recs.impactSummary.overloadDelta <= 0 ? "text-emerald-300" : "text-amber-300"}>
-                {formatOverloadDelta(recs.impactSummary.overloadDelta)}
-              </div>
-            </div>
-            <div>
-              <div className="text-slate-400">Resilience Δ</div>
-              <div className={recs.impactSummary.resilienceDelta >= 0 ? "text-emerald-300" : "text-rose-300"}>
-                {formatResilienceDelta(recs.impactSummary.resilienceDelta)}
-              </div>
-            </div>
-          </div>
         </div>
       </section>
     </div>

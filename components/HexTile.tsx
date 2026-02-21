@@ -10,6 +10,8 @@ type HexTileProps = {
   cy: number;
   stress: number;
   selected: boolean;
+  markers: string[];
+  showCriticalShield: boolean;
   onClick: () => void;
   onHover: (args: { district: District; x: number; y: number } | null) => void;
 };
@@ -21,24 +23,23 @@ const stressClass = (stress: number) => {
   return "hex-stress-critical";
 };
 
-export function HexTile({ district, points, cx, cy, stress, selected, onClick, onHover }: HexTileProps) {
+export function HexTile({
+  district,
+  points,
+  cx,
+  cy,
+  stress,
+  selected,
+  markers,
+  showCriticalShield,
+  onClick,
+  onHover,
+}: HexTileProps) {
   return (
     <g
       onClick={onClick}
-      onMouseEnter={(e) =>
-        onHover({
-          district,
-          x: e.clientX,
-          y: e.clientY,
-        })
-      }
-      onMouseMove={(e) =>
-        onHover({
-          district,
-          x: e.clientX,
-          y: e.clientY,
-        })
-      }
+      onMouseEnter={(e) => onHover({ district, x: e.clientX, y: e.clientY })}
+      onMouseMove={(e) => onHover({ district, x: e.clientX, y: e.clientY })}
       onMouseLeave={() => onHover(null)}
       className="cursor-pointer"
     >
@@ -51,15 +52,53 @@ export function HexTile({ district, points, cx, cy, stress, selected, onClick, o
           stress > 1 && "hex-pulse",
         )}
       />
+
       <text
         x={cx}
-        y={cy}
+        y={cy - 3}
         className="pointer-events-none select-none fill-slate-100 text-[12px] font-medium"
         textAnchor="middle"
         dominantBaseline="middle"
       >
         {district.name.split(" ")[0]}
       </text>
+
+      {showCriticalShield && (
+        <g>
+          <circle cx={cx + 34} cy={cy - 35} r={8} className="fill-cyan-300/20 stroke-cyan-300/70" />
+          <text
+            x={cx + 34}
+            y={cy - 35}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            className="fill-cyan-200 text-[10px] font-semibold"
+          >
+            S
+          </text>
+        </g>
+      )}
+
+      {markers.length > 0 && (
+        <g>
+          <rect
+            x={cx - 28}
+            y={cy + 14}
+            rx={7}
+            ry={7}
+            width={56}
+            height={14}
+            className="fill-black/45 stroke-white/20"
+          />
+          <text
+            x={cx}
+            y={cy + 21}
+            textAnchor="middle"
+            className="fill-emerald-200 text-[9px]"
+          >
+            {markers.join(" ")}
+          </text>
+        </g>
+      )}
     </g>
   );
 }

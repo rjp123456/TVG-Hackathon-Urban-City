@@ -8,22 +8,30 @@ type ForecastChartProps = {
   capMW: number[];
   selectedHour: number;
   onHourChange: (hour: number) => void;
+  uncertaintyScale?: number;
 };
 
 const W = 1200;
 const H = 240;
 const PAD = { top: 18, right: 20, bottom: 32, left: 48 };
 
-export function ForecastChart({ hours, loadMW, capMW, selectedHour, onHourChange }: ForecastChartProps) {
+export function ForecastChart({
+  hours,
+  loadMW,
+  capMW,
+  selectedHour,
+  onHourChange,
+  uncertaintyScale = 1,
+}: ForecastChartProps) {
   const [dragging, setDragging] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
   const bounds = useMemo(() => {
-    const all = [...loadMW, ...capMW];
-    const minY = Math.min(...all) * 0.92;
-    const maxY = Math.max(...all) * 1.06;
-    return { minY, maxY };
-  }, [loadMW, capMW]);
+    const upper = loadMW.map((v) => v * (1 + 0.06 * uncertaintyScale));
+    const lower = loadMW.map((v) => v * (1 - 0.03 * uncertaintyScale));
+    const all = [...capMW, ...upper, ...lower];
+    return { minY: Math.min(...all) * 0.92, maxY: Math.max(...all) * 1.08 };
+  }, [loadMW, capMW, uncertaintyScale]);
 
   const xScale = (h: number) => PAD.left + (h / 72) * (W - PAD.left - PAD.right);
   const yScale = (v: number) => PAD.top + ((bounds.maxY - v) / (bounds.maxY - bounds.minY)) * (H - PAD.top - PAD.bottom);
@@ -33,8 +41,12 @@ export function ForecastChart({ hours, loadMW, capMW, selectedHour, onHourChange
       .map((v, i) => `${i === 0 ? "M" : "L"} ${xScale(hours[i]).toFixed(2)} ${yScale(v).toFixed(2)}`)
       .join(" ");
 
-  const loadPath = makePath(loadMW);
-  const capPath = makePath(capMW);
+  const upper = loadMW.map((v) => v * (1 + 0.06 * uncertaintyScale));
+  const lower = loadMW.map((v) => v * (1 - 0.03 * uncertaintyScale));
+
+  const bandPath = `${makePath(upper)} ${lower
+    .map((v, i) => `L ${xScale(hours[hours.length - 1 - i]).toFixed(2)} ${yScale(v).toFixed(2)}`)
+    .join(" ")} Z`;
 
   const setHourFromClientX = (clientX: number) => {
     if (!wrapRef.current) return;
@@ -46,7 +58,7 @@ export function ForecastChart({ hours, loadMW, capMW, selectedHour, onHourChange
   return (
     <div className="glass-panel p-4" ref={wrapRef}>
       <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
-        <h3 className="uppercase tracking-[0.16em] text-cyan-300">72h Forecast Envelope</h3>
+        <h3 className="uppercase tracking-[0.16em] text-cyan-300">Operational Horizon: 72h</h3>
         <span>Load vs Capacity</span>
       </div>
       <svg
@@ -56,9 +68,7 @@ export function ForecastChart({ hours, loadMW, capMW, selectedHour, onHourChange
           setDragging(true);
           setHourFromClientX(e.clientX);
         }}
-        onMouseMove={(e) => {
-          if (dragging) setHourFromClientX(e.clientX);
-        }}
+        onMouseMove={(e) => dragging && setHourFromClientX(e.clientX)}
         onMouseUp={() => setDragging(false)}
         onMouseLeave={() => setDragging(false)}
         onClick={(e) => setHourFromClientX(e.clientX)}
@@ -72,14 +82,14 @@ export function ForecastChart({ hours, loadMW, capMW, selectedHour, onHourChange
           </g>
         ))}
 
-        <path d={capPath} className="chart-capacity" />
-        <path d={loadPath} className="chart-load" />
+        <path d={bandPath} className="fill-emerald-300/8" />
+        <path d={makePath(capMW)} className="chart-capacity" />
+        <path d={makePath(loadMW)} className="chart-load" />
 
         <line x1={xScale(selectedHour)} y1={PAD.top} x2={xScale(selectedHour)} y2={H - PAD.bottom} className="chart-cursor" />
         <circle cx={xScale(selectedHour)} cy={yScale(loadMW[selectedHour])} r={4.5} className="fill-emerald-300" />
 
-        <text x={PAD.left} y={14} className="fill-emerald-300 text-[11px]">Load</text>
-        <text x={PAD.left + 48} y={14} className="fill-cyan-300 text-[11px]">Capacity</text>
+        <circle cx={xScale(loadMW.indexOf(Math.max(...loadMW)))} cy={yScale(Math.max(...loadMW))} r={4} className="fill-rose-300" />
       </svg>
     </div>
   );

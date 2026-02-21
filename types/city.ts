@@ -26,6 +26,16 @@ export type District = {
   };
 };
 
+export type DistrictOverride = {
+  storageMWh?: number;
+  capBoostMW?: number;
+  drEnabled?: boolean;
+  solarBoost?: number;
+  evBoost?: number;
+};
+
+export type DistrictOverrides = Record<DistrictId, DistrictOverride>;
+
 export type CityParams = {
   evAdoptionDelta: number;
   solarDelta: number;
@@ -35,13 +45,15 @@ export type CityParams = {
   heatwaveEnabled: boolean;
   stormEnabled: boolean;
   eventEnabled: boolean;
+  criticalPriorityEnabled: boolean;
+  budgetM: number;
 };
 
 export type ScenarioKey = "baseline" | "heatwaveEvSurge" | "stormStress" | "greenUpgrade";
 
 export type ScenarioPreset = {
   name: string;
-  params: CityParams;
+  params: Omit<CityParams, "budgetM">;
 };
 
 export type PerDistrictSeries = {
@@ -49,20 +61,49 @@ export type PerDistrictSeries = {
   capMW: number[];
   stress: number[];
   prob: number[];
-  solarMW: number[];
+};
+
+export type DistrictComponentPoint = {
+  baseMW: number;
+  evMW: number;
+  acMW: number;
+  eventMW: number;
+  solarMW: number;
+  storageShaveMW: number;
+  capMW: number;
+};
+
+export type AlertPoint = {
+  hour: number;
+  level: "warn" | "crit";
+  districtId: DistrictId;
+  prob: number;
+  stress: number;
+};
+
+export type CompareSummary = {
+  peakDeltaMW: number;
+  overloadDelta: number;
+  resilienceDelta: number;
+  carbonDelta: number;
+  costSavingsPct: number;
 };
 
 export type SimulationResult = {
   hours: number[];
   perDistrict: Record<DistrictId, PerDistrictSeries>;
+  perDistrictComponents: Record<DistrictId, DistrictComponentPoint[]>;
   city: {
     loadMW: number[];
     capMW: number[];
+    totalSolarMW: number[];
     carbonIntensity: number[];
+    costIndex: number[];
     peakHour: number;
     peakLoad: number;
   };
-  summaryAtHour: {
+  alertHours: AlertPoint[];
+  summaryAtPeak: {
     hour: number;
     overloadZones: DistrictId[];
     topRisk: Array<{ id: DistrictId; stress: number; prob: number }>;
@@ -75,19 +116,36 @@ export type RiskFeedItem = {
   text: string;
 };
 
+export type ActionImpact = {
+  peakLoadDeltaMW: number;
+  overloadDelta: number;
+  peakRiskDelta: number;
+  resilienceDelta: number;
+  carbonDelta: number;
+  costDelta: number;
+  costSavingsPct: number;
+};
+
 export type ActionItem = {
+  id: string;
   title: string;
   rationale: string;
-  impact: string;
+  drivers: string;
   confidence: "High" | "Med" | "Low";
+  impact: ActionImpact;
+  costM: number;
+  overBudget: boolean;
+  bestBangForBuck?: boolean;
 };
 
 export type RecommendationOutput = {
   riskFeed: RiskFeedItem[];
   actions: ActionItem[];
-  impactSummary: {
-    peakDelta: number;
-    overloadDelta: number;
-    resilienceDelta: number;
-  };
+  compare: CompareSummary;
+};
+
+export type DriverItem = {
+  label: string;
+  valueMW: number;
+  tone: "up" | "down";
 };

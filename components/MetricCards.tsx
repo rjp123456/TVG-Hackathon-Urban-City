@@ -5,13 +5,20 @@ type MetricCardsProps = {
   peakLoad: number;
   overloadZones: number;
   carbonIntensity: number;
+  costIndex: number;
 };
 
-export function MetricCards({ resilienceScore, peakLoad, overloadZones, carbonIntensity }: MetricCardsProps) {
+export function MetricCards({
+  resilienceScore,
+  peakLoad,
+  overloadZones,
+  carbonIntensity,
+  costIndex,
+}: MetricCardsProps) {
   return (
     <div className="grid grid-cols-2 gap-3">
       <div className="glass-panel p-3">
-        <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Resilience Score</div>
+        <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Resilience Index v0.1</div>
         <div className="mt-1 text-2xl font-semibold text-emerald-300">{resilienceScore}</div>
       </div>
       <div className="glass-panel p-3">
@@ -25,8 +32,8 @@ export function MetricCards({ resilienceScore, peakLoad, overloadZones, carbonIn
         </div>
       </div>
       <div className="glass-panel p-3">
-        <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Carbon @ T</div>
-        <div className="mt-1 text-2xl font-semibold text-amber-300">{carbonIntensity.toFixed(0)}</div>
+        <div className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Carbon / Cost</div>
+        <div className="mt-1 text-lg font-semibold text-amber-300">{carbonIntensity.toFixed(0)} / {costIndex.toFixed(2)}x</div>
       </div>
     </div>
   );

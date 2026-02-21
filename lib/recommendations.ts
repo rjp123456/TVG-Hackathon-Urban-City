@@ -1,143 +1,289 @@
 import { districts } from "@/lib/cityData";
-import { toPercent } from "@/lib/utils";
-import { CityParams, RecommendationOutput, SimulationResult } from "@/types/city";
+import { runSimulation } from "@/lib/simulation";
+import {
+  canAffordChange,
+  clamp,
+  computeBudgetUsed,
+  formatSigned,
+  stableKey,
+  toPercent,
+} from "@/lib/utils";
+import {
+  ActionItem,
+  CityParams,
+  DistrictId,
+  DistrictOverrides,
+  RecommendationOutput,
+  SimulationResult,
+} from "@/types/city";
 
-export const buildRecommendations = (
-  result: SimulationResult,
-  params: CityParams,
-  baseline?: SimulationResult,
-): RecommendationOutput => {
-  const peakHour = result.city.peakHour;
-  const topRisk = result.summaryAtHour.topRisk[0];
-
-  const riskFeed: RecommendationOutput["riskFeed"] = [];
-  if (topRisk && topRisk.stress > 1) {
-    riskFeed.push({
-      type: "warn",
-      text: `⚠ ${districts.find((d) => d.id === topRisk.id)?.name ?? topRisk.id} projected overload at T+${peakHour}h (Stress ${topRisk.stress.toFixed(2)}).`,
-    });
-  } else {
-    riskFeed.push({
-      type: "ok",
-      text: `System stable at projected peak (T+${peakHour}h) with no hard overloads detected.`,
-    });
-  }
-
-  const middayHours = [11, 12, 13, 14].map((h) => h + 24);
-  const middaySolar = middayHours.reduce(
-    (acc, h) =>
-      acc + districts.reduce((sum, d) => sum + result.perDistrict[d.id].solarMW[h], 0),
-    0,
-  );
-  const middayLoad = middayHours.reduce((acc, h) => acc + result.city.loadMW[h], 0);
-  const solarPct = middayLoad > 0 ? (middaySolar / middayLoad) * 100 : 0;
-
-  riskFeed.push({
-    type: "info",
-    text: `☀ Solar offsets ${solarPct.toFixed(1)}% of midday demand under this scenario.`,
-  });
-
-  if (params.stormEnabled) {
-    riskFeed.push({
-      type: "warn",
-      text: `Storm mode de-rates feeder capacity and suppresses solar availability across vulnerable zones.`,
-    });
-  } else {
-    riskFeed.push({
-      type: "ok",
-      text: `Grid inertia remains healthy with balanced thermal and renewable contribution.`,
-    });
-  }
-
-  const actions: RecommendationOutput["actions"] = [];
-
-  const peakRisk = result.summaryAtHour.topRisk.find((r) => r.prob > 0.65);
-  if (peakRisk) {
-    const districtName = districts.find((d) => d.id === peakRisk.id)?.name ?? peakRisk.id;
-    const peakReduction = Math.max(4, params.storageMWh * 6.2);
-    actions.push({
-      title: `Deploy storage in ${districtName}`,
-      rationale: "Peak risk exceeds threshold; shaving evening peak reduces overload probability.",
-      impact: `Expected peak reduction: ~${peakReduction.toFixed(1)} MW; overload probability -${Math.min(35, peakRisk.prob * 35).toFixed(0)}%.`,
-      confidence: "High",
-    });
-  }
-
-  const peakDayHour = peakHour % 24;
-  if (peakDayHour >= 18 && peakDayHour <= 22 && params.evAdoptionDelta >= 0.12) {
-    actions.push({
-      title: "Enable managed EV charging (6-9pm deferral)",
-      rationale: "EV demand is concentrated in evening hours and is amplifying peak loading.",
-      impact: "Expected evening net-load suppression: 6-12 MW across residential feeders.",
-      confidence: "High",
-    });
-  }
-
-  const avgSolarPen = districts.reduce((acc, d) => acc + d.solarPenetration + params.solarDelta, 0) / districts.length;
-  const middayStress = middayHours.reduce(
-    (acc, h) => acc + districts.reduce((s, d) => s + result.perDistrict[d.id].stress[h], 0) / districts.length,
-    0,
-  ) / middayHours.length;
-
-  if (avgSolarPen < 0.25 && middayStress > 0.72) {
-    actions.push({
-      title: "Incentivize rooftop solar in Eastside and South Residential",
-      rationale: "Distributed midday generation can flatten daytime thermal dispatch and protect evening ramp.",
-      impact: "Modeled effect: 3-7% midday load offset and lower carbon intensity variance.",
-      confidence: "Med",
-    });
-  }
-
-  if (params.stormEnabled) {
-    actions.push({
-      title: "Activate microgrid failover for critical districts",
-      rationale: "Storm conditions increase outage exposure for high-criticality service corridors.",
-      impact: "Improves continuity for Medical District and Downtown while reducing overload spillover risk.",
-      confidence: "High",
-    });
-  }
-
-  const trimmedActions = actions.slice(0, 3);
-
-  const baselinePeak = baseline?.city.peakLoad ?? result.city.peakLoad;
-  const currentOverload = result.summaryAtHour.overloadZones.length;
-  const baselineOverload = baseline?.summaryAtHour.overloadZones.length ?? currentOverload;
-  const peakDelta = result.city.peakLoad - baselinePeak;
-  const overloadDelta = currentOverload - baselineOverload;
-  const resilienceDelta = result.resilienceScore - (baseline?.resilienceScore ?? result.resilienceScore);
-
-  riskFeed.push({
-    type: "info",
-    text: `Drivers: ${params.heatwaveEnabled ? "heat stress" : "normal thermal profile"}, ${params.evAdoptionDelta > 0.08 ? "EV evening peak" : "controlled EV demand"}, ${params.stormEnabled ? "storm-related solar drop-off" : "stable solar curve"}.`,
-  });
-
-  return {
-    riskFeed,
-    actions: trimmedActions.length
-      ? trimmedActions
-      : [
-          {
-            title: "Maintain baseline dispatch posture",
-            rationale: "Risk profile is within operational envelope with current intervention mix.",
-            impact: "No urgent action required; continue monitoring peak-hour stress and reserve margin.",
-            confidence: "Med",
-          },
-        ],
-    impactSummary: {
-      peakDelta: Number(peakDelta.toFixed(1)),
-      overloadDelta,
-      resilienceDelta: Number(resilienceDelta.toFixed(1)),
-    },
+type CandidateAction = {
+  id: string;
+  title: string;
+  rationale: string;
+  drivers: string;
+  costM: number;
+  apply: (params: CityParams, overrides: DistrictOverrides, worstDistrictId: DistrictId) => {
+    params: CityParams;
+    overrides: DistrictOverrides;
   };
 };
 
-export const formatImpact = (value: number, unit: string) => {
-  const abs = Math.abs(value).toFixed(1);
-  return `${value >= 0 ? "+" : "-"}${abs}${unit}`;
+const cloneOverrides = (overrides: DistrictOverrides): DistrictOverrides =>
+  JSON.parse(JSON.stringify(overrides)) as DistrictOverrides;
+
+export const identifyWorstDistrict = (result: SimulationResult, hour = result.city.peakHour) =>
+  districts
+    .map((d) => ({ id: d.id as DistrictId, prob: result.perDistrict[d.id].prob[hour] }))
+    .sort((a, b) => b.prob - a.prob)[0].id;
+
+const topLoadDistricts = (result: SimulationResult) => {
+  const hour = result.city.peakHour;
+  return districts
+    .map((d) => ({ id: d.id as DistrictId, load: result.perDistrict[d.id].loadMW[hour] }))
+    .sort((a, b) => b.load - a.load)
+    .slice(0, 2)
+    .map((d) => d.id);
 };
 
-export const formatOverloadDelta = (value: number) => `${value >= 0 ? "+" : ""}${value}`;
+export const generateCandidateActions = (
+  params: CityParams,
+  overrides: DistrictOverrides,
+  worstDistrictId: DistrictId,
+  result: SimulationResult,
+): CandidateAction[] => {
+  const candidates: CandidateAction[] = [
+    {
+      id: "storage-worst",
+      title: `Add +1.5 MWh battery in ${districts.find((d) => d.id === worstDistrictId)?.name ?? worstDistrictId}`,
+      rationale: "Targets peak-hour stress where overload probability is highest.",
+      drivers: "Evening ramp and localized peak pressure",
+      costM: 0.9,
+      apply: (p, o, worst) => {
+        const nextO = cloneOverrides(o);
+        nextO[worst].storageMWh = clamp((nextO[worst].storageMWh ?? 0) + 1.5, 0, 5);
+        return { params: { ...p }, overrides: nextO };
+      },
+    },
+    {
+      id: "dr-enable",
+      title: params.demandResponseEnabled
+        ? `Enable local DR in ${districts.find((d) => d.id === worstDistrictId)?.name ?? worstDistrictId}`
+        : "Enable global managed demand response",
+      rationale: "Defers EV charging during 6-9pm to flatten feeder spikes.",
+      drivers: "EV evening concentration",
+      costM: 0.2,
+      apply: (p, o, worst) => {
+        if (!p.demandResponseEnabled) return { params: { ...p, demandResponseEnabled: true }, overrides: cloneOverrides(o) };
+        const nextO = cloneOverrides(o);
+        nextO[worst].drEnabled = true;
+        return { params: { ...p }, overrides: nextO };
+      },
+    },
+    {
+      id: "capacity-worst",
+      title: `Upgrade transformer +10 MW in ${districts.find((d) => d.id === worstDistrictId)?.name ?? worstDistrictId}`,
+      rationale: "Adds immediate headroom in the most constrained district.",
+      drivers: "Transformer loading margin",
+      costM: 0.35,
+      apply: (p, o, worst) => {
+        const nextO = cloneOverrides(o);
+        nextO[worst].capBoostMW = (nextO[worst].capBoostMW ?? 0) + 10;
+        return { params: { ...p }, overrides: nextO };
+      },
+    },
+    {
+      id: "solar-top2",
+      title: "Incentivize +10% rooftop solar in top load districts",
+      rationale: "Cuts midday thermal dispatch and lowers evening ramp burden.",
+      drivers: "Solar offset and carbon pressure",
+      costM: 0.5,
+      apply: (p, o) => {
+        const top2 = topLoadDistricts(result);
+        const nextO = cloneOverrides(o);
+        for (const id of top2) {
+          nextO[id].solarBoost = (nextO[id].solarBoost ?? 0) + 0.1;
+        }
+        return { params: { ...p }, overrides: nextO };
+      },
+    },
+  ];
 
-export const formatResilienceDelta = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(0)} pts`;
+  return candidates;
+};
 
-export const formatFeedPercent = (value: number) => toPercent(value, 1);
+const overloadCountAtPeak = (result: SimulationResult) => result.summaryAtPeak.overloadZones.length;
+const peakRisk = (result: SimulationResult) => Math.max(...districts.map((d) => result.perDistrict[d.id].prob[result.city.peakHour]));
+
+const actionScore = (impact: ActionItem["impact"]) =>
+  impact.resilienceDelta * 1.0 +
+  (-impact.overloadDelta > 0 ? -impact.overloadDelta * 12 : 0) +
+  (-impact.peakLoadDeltaMW * 0.12) +
+  (-impact.peakRiskDelta * 30) +
+  (impact.costSavingsPct * 0.5);
+
+const confidenceFromImpact = (impact: ActionItem["impact"]) => {
+  if (impact.resilienceDelta >= 8 || impact.overloadDelta <= -1 || impact.peakRiskDelta <= -0.12) return "High";
+  return "Med";
+};
+
+export const runCounterfactuals = (args: {
+  resultA: SimulationResult;
+  resultB: SimulationResult;
+  paramsB: CityParams;
+  overridesB: DistrictOverrides;
+  selectedHour: number;
+}) => {
+  const { resultA, resultB, paramsB, overridesB, selectedHour } = args;
+  const worstDistrictId = identifyWorstDistrict(resultB, selectedHour);
+  const baseOverloads = overloadCountAtPeak(resultB);
+  const basePeakRisk = peakRisk(resultB);
+  const basePeakHour = resultB.city.peakHour;
+  const budgetUsed = computeBudgetUsed(paramsB, overridesB);
+
+  const candidates = generateCandidateActions(paramsB, overridesB, worstDistrictId, resultB).slice(0, 4);
+
+  const evaluated: ActionItem[] = candidates.map((candidate) => {
+    const next = candidate.apply(paramsB, overridesB, worstDistrictId);
+    const simulated = runSimulation(next.params, next.overrides);
+
+    const peakLoadDeltaMW = simulated.city.peakLoad - resultB.city.peakLoad;
+    const overloadDelta = overloadCountAtPeak(simulated) - baseOverloads;
+    const peakRiskDelta = peakRisk(simulated) - basePeakRisk;
+    const resilienceDelta = simulated.resilienceScore - resultB.resilienceScore;
+    const carbonDelta = simulated.city.carbonIntensity[simulated.city.peakHour] - resultB.city.carbonIntensity[basePeakHour];
+    const costDelta = simulated.city.costIndex[simulated.city.peakHour] - resultB.city.costIndex[basePeakHour];
+    const costSavingsPct =
+      ((resultB.city.costIndex[basePeakHour] - simulated.city.costIndex[simulated.city.peakHour]) /
+        Math.max(0.1, resultB.city.costIndex[basePeakHour])) *
+      100;
+
+    const impact: ActionItem["impact"] = {
+      peakLoadDeltaMW: Number(peakLoadDeltaMW.toFixed(1)),
+      overloadDelta,
+      peakRiskDelta: Number(peakRiskDelta.toFixed(3)),
+      resilienceDelta: Number(resilienceDelta.toFixed(1)),
+      carbonDelta: Number(carbonDelta.toFixed(1)),
+      costDelta: Number(costDelta.toFixed(3)),
+      costSavingsPct: Number(costSavingsPct.toFixed(1)),
+    };
+
+    return {
+      id: candidate.id,
+      title: candidate.title,
+      rationale: candidate.rationale,
+      drivers: candidate.drivers,
+      confidence: confidenceFromImpact(impact),
+      impact,
+      costM: candidate.costM,
+      overBudget: !canAffordChange(paramsB.budgetM, budgetUsed, candidate.costM),
+    };
+  });
+
+  const ranked = evaluated
+    .slice()
+    .sort((a, b) => actionScore(b.impact) - actionScore(a.impact))
+    .slice(0, 3);
+
+  const affordable = ranked.filter((a) => !a.overBudget);
+  if (affordable.length) {
+    const best = affordable
+      .slice()
+      .sort(
+        (a, b) => actionScore(b.impact) / Math.max(0.1, b.costM) - actionScore(a.impact) / Math.max(0.1, a.costM),
+      )[0];
+    best.bestBangForBuck = true;
+  }
+
+  const peakA = resultA.city.peakHour;
+  const peakB = resultB.city.peakHour;
+
+  return {
+    actions: ranked,
+    compare: {
+      peakDeltaMW: Number((resultB.city.peakLoad - resultA.city.peakLoad).toFixed(1)),
+      overloadDelta: overloadCountAtPeak(resultB) - overloadCountAtPeak(resultA),
+      resilienceDelta: resultB.resilienceScore - resultA.resilienceScore,
+      carbonDelta: Number((resultB.city.carbonIntensity[peakB] - resultA.city.carbonIntensity[peakA]).toFixed(1)),
+      costSavingsPct: Number(
+        (
+          ((resultA.city.costIndex[peakA] - resultB.city.costIndex[peakB]) /
+            Math.max(0.1, resultA.city.costIndex[peakA])) *
+          100
+        ).toFixed(1),
+      ),
+    },
+    worstDistrictId,
+  };
+};
+
+export const buildRecommendations = (args: {
+  resultA: SimulationResult;
+  resultB: SimulationResult;
+  paramsB: CityParams;
+  overridesB: DistrictOverrides;
+  selectedHour: number;
+}): RecommendationOutput => {
+  const { resultA, resultB, paramsB, overridesB, selectedHour } = args;
+  const { actions, compare, worstDistrictId } = runCounterfactuals(args);
+
+  const worstAtSelected = districts
+    .map((d) => ({ id: d.id as DistrictId, prob: resultB.perDistrict[d.id].prob[selectedHour], stress: resultB.perDistrict[d.id].stress[selectedHour] }))
+    .sort((a, b) => b.prob - a.prob)[0];
+
+  const peakRiskDistrict = resultB.summaryAtPeak.topRisk[0];
+  const middayHours = [11, 12, 13, 14].map((h) => h + 24);
+  const solarOffsetPct =
+    middayHours.reduce((acc, h) => acc + resultB.city.totalSolarMW[h], 0) /
+    Math.max(1, middayHours.reduce((acc, h) => acc + resultB.city.loadMW[h], 0));
+
+  const riskFeed: RecommendationOutput["riskFeed"] = [
+    {
+      type: worstAtSelected.prob > 0.75 || worstAtSelected.stress > 1 ? "warn" : "info",
+      text: `T+${selectedHour}h worst zone: ${districts.find((d) => d.id === worstAtSelected.id)?.name} (Stress ${worstAtSelected.stress.toFixed(2)}, Risk ${(worstAtSelected.prob * 100).toFixed(0)}%).`,
+    },
+    {
+      type: peakRiskDistrict.stress > 1 ? "warn" : "info",
+      text: `Peak projection at T+${resultB.city.peakHour}h flags ${districts.find((d) => d.id === peakRiskDistrict.id)?.name} as top overload candidate.`,
+    },
+    {
+      type: "ok",
+      text: `Renewables offset ${(solarOffsetPct * 100).toFixed(1)}% of midday demand in Scenario B.`,
+    },
+  ];
+
+  const peakCost = resultB.city.costIndex[resultB.city.peakHour];
+  if (peakCost > 1.5) {
+    riskFeed.push({
+      type: "warn",
+      text: `Cost pressure elevated at peak (Index ${peakCost.toFixed(2)}). Dispatch optimization advised.`,
+    });
+  }
+
+  if (["medical", "downtown"].includes(worstDistrictId) && worstAtSelected.prob > 0.62) {
+    riskFeed.push({
+      type: "warn",
+      text: `Critical infrastructure exposure detected in ${districts.find((d) => d.id === worstDistrictId)?.name}. Prioritize protective interventions.`,
+    });
+  }
+
+  const used = computeBudgetUsed(paramsB, overridesB);
+  riskFeed.push({
+    type: "info",
+    text: `Budget utilization ${used.toFixed(2)}M / ${paramsB.budgetM.toFixed(1)}M. ${used > paramsB.budgetM ? "Over allocation risk." : "Within approved cap."}`,
+  });
+
+  return { riskFeed, actions, compare };
+};
+
+export const actionImpactLine = (action: ActionItem) =>
+  `Peak: ${formatSigned(action.impact.peakLoadDeltaMW, 1)} MW • Risk: ${formatSigned(action.impact.peakRiskDelta * 100, 1)}% • Resilience: ${formatSigned(action.impact.resilienceDelta, 0)}`;
+
+export const compareLine = (compare: RecommendationOutput["compare"]) =>
+  `Peak ${formatSigned(compare.peakDeltaMW, 1)} MW • Overloads ${formatSigned(compare.overloadDelta, 0)} • Resilience ${formatSigned(compare.resilienceDelta, 0)} • Cost ${formatSigned(compare.costSavingsPct, 1)}%`;
+
+export const recommendationsKey = (params: CityParams, overrides: DistrictOverrides, selectedHour: number) =>
+  stableKey({ params, overrides, selectedHour });
+
+export const costChip = (action: ActionItem) => `${action.costM.toFixed(2)}M`;
+export const riskLabel = (value: number) => toPercent(value, 0);

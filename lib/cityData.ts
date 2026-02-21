@@ -131,6 +131,7 @@ export const scenarios = {
       heatwaveEnabled: false,
       stormEnabled: false,
       eventEnabled: false,
+      criticalPriorityEnabled: true,
     },
   },
   heatwaveEvSurge: {
@@ -144,6 +145,7 @@ export const scenarios = {
       heatwaveEnabled: true,
       stormEnabled: false,
       eventEnabled: true,
+      criticalPriorityEnabled: true,
     },
   },
   stormStress: {
@@ -157,6 +159,7 @@ export const scenarios = {
       heatwaveEnabled: false,
       stormEnabled: true,
       eventEnabled: false,
+      criticalPriorityEnabled: true,
     },
   },
   greenUpgrade: {
@@ -170,8 +173,12 @@ export const scenarios = {
       heatwaveEnabled: false,
       stormEnabled: false,
       eventEnabled: false,
+      criticalPriorityEnabled: true,
     },
   },
 } as const satisfies Record<ScenarioKey, ScenarioPreset>;
 
-export const defaultParams: CityParams = { ...scenarios.baseline.params };
+export const defaultParams: CityParams = {
+  ...scenarios.baseline.params,
+  budgetM: 5,
+};

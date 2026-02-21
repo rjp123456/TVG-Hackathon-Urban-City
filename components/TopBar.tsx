@@ -1,7 +1,8 @@
 "use client";
 
+import { AlertTimeline } from "@/components/AlertTimeline";
 import { scenarios } from "@/lib/cityData";
-import { ScenarioKey } from "@/types/city";
+import { AlertPoint, ScenarioKey } from "@/types/city";
 
 type TopBarProps = {
   selectedScenario: ScenarioKey;
@@ -11,9 +12,14 @@ type TopBarProps = {
   onHourChange: (hour: number) => void;
   isPlaying: boolean;
   onTogglePlay: () => void;
-  gridHealth: number;
+  alerts: AlertPoint[];
+  compareMode: boolean;
+  onToggleCompareMode: () => void;
   carbonIntensity: number;
-  peakRisk: number;
+  costIndex: number;
+  budgetUsedM: number;
+  budgetM: number;
+  interventionsCount: number;
 };
 
 export function TopBar({
@@ -24,9 +30,14 @@ export function TopBar({
   onHourChange,
   isPlaying,
   onTogglePlay,
-  gridHealth,
+  alerts,
+  compareMode,
+  onToggleCompareMode,
   carbonIntensity,
-  peakRisk,
+  costIndex,
+  budgetUsedM,
+  budgetM,
+  interventionsCount,
 }: TopBarProps) {
   return (
     <header className="glass-panel flex flex-col gap-4 p-4 md:p-5 xl:flex-row xl:items-center xl:justify-between">
@@ -37,11 +48,10 @@ export function TopBar({
         </span>
       </div>
 
-      <div className="flex min-w-[340px] flex-1 flex-col gap-2 xl:max-w-[620px]">
+      <div className="flex min-w-[340px] flex-1 flex-col gap-1 xl:max-w-[700px]">
         <div className="flex items-center justify-between text-xs text-slate-300">
-          <span>T+0h</span>
+          <span>Operational Horizon: 72h</span>
           <span className="text-emerald-300">T+{selectedHour}h</span>
-          <span>T+72h</span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -61,6 +71,7 @@ export function TopBar({
             className="city-slider h-2 w-full"
           />
         </div>
+        <AlertTimeline alerts={alerts} selectedHour={selectedHour} onJump={onHourChange} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 xl:flex xl:items-center">
@@ -75,6 +86,7 @@ export function TopBar({
             </option>
           ))}
         </select>
+
         <button
           type="button"
           onClick={onReset}
@@ -83,17 +95,38 @@ export function TopBar({
           Reset
         </button>
 
+        <button
+          type="button"
+          onClick={onToggleCompareMode}
+          className={`rounded-lg border px-3 py-2 text-sm transition ${
+            compareMode
+              ? "border-cyan-300/70 bg-cyan-300/10 text-cyan-100"
+              : "border-white/15 bg-white/5 text-slate-200"
+          }`}
+        >
+          Compare {compareMode ? "ON" : "OFF"}
+        </button>
+
         <div className="rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-slate-300">
-          <div>Grid Health</div>
-          <div className="text-sm font-semibold text-emerald-300">{gridHealth.toFixed(0)}%</div>
-        </div>
-        <div className="rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-slate-300">
-          <div>Carbon</div>
+          <div>Carbon Intensity</div>
           <div className="text-sm font-semibold text-cyan-300">{carbonIntensity.toFixed(0)} gCO2/kWh</div>
         </div>
+
         <div className="rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-slate-300">
-          <div>Peak Risk</div>
-          <div className="text-sm font-semibold text-amber-300">{(peakRisk * 100).toFixed(0)}%</div>
+          <div>Cost Pressure</div>
+          <div className="text-sm font-semibold text-amber-300">{costIndex.toFixed(2)}x</div>
+        </div>
+
+        <div className="rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-slate-300">
+          <div>Placed Interventions</div>
+          <div className="text-sm font-semibold text-emerald-300">{interventionsCount}</div>
+        </div>
+
+        <div className="rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-slate-300">
+          <div>Budget</div>
+          <div className="text-sm font-semibold text-emerald-300">
+            {budgetUsedM.toFixed(2)} / {budgetM.toFixed(1)}M
+          </div>
         </div>
       </div>
     </header>
