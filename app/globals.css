@@ -1,0 +1,172 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue", sans-serif;
+  background: #060a0d;
+}
+
+.bg-city-bg {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(16, 185, 129, 0.12), transparent 36%),
+    radial-gradient(circle at 82% 18%, rgba(34, 211, 238, 0.1), transparent 34%),
+    linear-gradient(180deg, #030507 0%, #05090d 100%);
+}
+
+.grid-overlay {
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+  background-size: 38px 38px;
+  opacity: 0.35;
+}
+
+.glass-panel {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(160deg, rgba(11, 18, 26, 0.72), rgba(9, 14, 20, 0.42));
+  backdrop-filter: blur(16px);
+  box-shadow:
+    0 0 0 1px rgba(16, 185, 129, 0.06) inset,
+    0 12px 42px rgba(0, 0, 0, 0.36);
+  border-radius: 14px;
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+}
+
+.glass-panel:hover {
+  transform: translateY(-2px);
+  border-color: rgba(45, 212, 191, 0.4);
+  box-shadow:
+    0 0 0 1px rgba(45, 212, 191, 0.16) inset,
+    0 16px 38px rgba(0, 0, 0, 0.45),
+    0 0 22px rgba(45, 212, 191, 0.16);
+}
+
+.city-slider {
+  appearance: none;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.city-slider::-webkit-slider-thumb {
+  appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: #5eead4;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 14px rgba(94, 234, 212, 0.75);
+}
+
+.city-slider::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: #5eead4;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 14px rgba(94, 234, 212, 0.75);
+}
+
+.hex-edge {
+  stroke: rgba(56, 189, 248, 0.35);
+  stroke-width: 2;
+}
+
+.hex-tile {
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 2;
+}
+
+.hex-stress-safe {
+  fill: rgba(16, 185, 129, 0.28);
+}
+
+.hex-stress-watch {
+  fill: rgba(250, 204, 21, 0.3);
+}
+
+.hex-stress-warn {
+  fill: rgba(251, 146, 60, 0.33);
+}
+
+.hex-stress-critical {
+  fill: rgba(239, 68, 68, 0.4);
+}
+
+.hex-selected {
+  stroke: rgba(45, 212, 191, 0.95);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 10px rgba(45, 212, 191, 0.6));
+}
+
+@keyframes riskPulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(248, 113, 113, 0.25));
+  }
+  50% {
+    filter: drop-shadow(0 0 14px rgba(248, 113, 113, 0.65));
+  }
+}
+
+.hex-pulse {
+  animation: riskPulse 1800ms ease-in-out infinite;
+}
+
+.chart-grid {
+  stroke: rgba(148, 163, 184, 0.15);
+  stroke-width: 1;
+}
+
+.chart-load {
+  fill: none;
+  stroke: rgba(16, 185, 129, 0.95);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.35));
+}
+
+.chart-capacity {
+  fill: none;
+  stroke: rgba(34, 211, 238, 0.9);
+  stroke-width: 2.5;
+  stroke-dasharray: 6 6;
+}
+
+.chart-cursor {
+  stroke: rgba(250, 204, 21, 0.9);
+  stroke-width: 2;
+}
+
+.run-button {
+  background: linear-gradient(120deg, #10b981 0%, #2dd4bf 50%, #22d3ee 100%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset, 0 10px 30px rgba(16, 185, 129, 0.38);
+  transition: transform 180ms ease, box-shadow 220ms ease;
+}
+
+.run-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2) inset, 0 0 24px rgba(45, 212, 191, 0.5);
+}
+
+@keyframes runPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.65);
+  }
+  100% {
+    box-shadow: 0 0 0 20px rgba(16, 185, 129, 0);
+  }
+}
+
+.run-button-pulse {
+  animation: runPulse 550ms ease-out;
+}
