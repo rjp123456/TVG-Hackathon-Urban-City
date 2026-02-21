@@ -21,18 +21,60 @@ import {
   emptyOverrides,
   stableKey,
 } from "@/lib/utils";
-import { CityParams, DistrictId, DistrictOverrides, ScenarioKey, SimulationResult } from "@/types/city";
+import {
+  CityParams,
+  DistrictId,
+  DistrictOverrides,
+  LiveInputs,
+  ScenarioKey,
+  SimulationResult,
+} from "@/types/city";
+
+type ErcotBasicResponse = {
+  ok: boolean;
+  timestampISO: string;
+  systemDemandMW: number;
+  windMW: number;
+  solarMW: number;
+  renewablesShare?: number;
+};
 
 type PinnedState = {
   label: string;
   params: CityParams;
   overrides: DistrictOverrides;
+  liveInputs: LiveInputs | null;
 };
 
 const withBudget = (params: Omit<CityParams, "budgetM">, budgetM: number): CityParams => ({
   ...params,
   budgetM,
 });
+
+const buildLiveSeedInputs = (seed: ErcotBasicResponse, synthetic: SimulationResult): LiveInputs => {
+  const renewablesShare =
+    seed.renewablesShare ?? (seed.windMW + seed.solarMW) / Math.max(1, seed.systemDemandMW);
+  const demandScale = clamp(seed.systemDemandMW / 72000, 0.7, 1.4);
+
+  const demandCurveMW = synthetic.city.loadMW.map((v) => v * demandScale);
+  const capacityCurveMW = synthetic.city.capMW.map((v) => v * demandScale * 1.02);
+  const carbonSeed = clamp(420 - 260 * renewablesShare, 180, 520);
+  const carbonIntensityCurve = synthetic.city.carbonIntensity.map(() => carbonSeed);
+
+  return {
+    liveMode: true,
+    liveLabel: "Austin (proxy: ERCOT system seed)",
+    fetchedAtISO: seed.timestampISO,
+    demandCurveMW,
+    capacityCurveMW,
+    renewablesCurve: {
+      windMW: synthetic.city.loadMW.map(() => seed.windMW * demandScale),
+      solarMW: synthetic.city.loadMW.map(() => seed.solarMW * demandScale),
+    },
+    carbonIntensityCurve,
+    costIndexCurve: synthetic.city.costIndex.slice(),
+  };
+};
 
 export default function Page() {
   const [selectedScenarioKey, setSelectedScenarioKey] = useState<ScenarioKey>("baseline");
@@ -43,31 +85,41 @@ export default function Page() {
   const [selectedDistrictId, setSelectedDistrictId] = useState<DistrictId>(districts[0].id);
   const [compareMode, setCompareMode] = useState(true);
   const [budgetWarning, setBudgetWarning] = useState("");
+  const [uiWarning, setUiWarning] = useState("");
+
+  const [liveMode, setLiveMode] = useState(false);
+  const [liveInputs, setLiveInputs] = useState<LiveInputs | null>(null);
+  const [liveSyncedAtISO, setLiveSyncedAtISO] = useState<string | null>(null);
+  const [liveFetchPending, setLiveFetchPending] = useState(false);
+
+  const lastLiveFetchMsRef = useRef(0);
+  const liveSeedCacheRef = useRef<ErcotBasicResponse | null>(null);
 
   const [pinnedA, setPinnedA] = useState<PinnedState>({
     label: "Baseline",
     params: defaultParams,
     overrides: emptyOverrides(),
+    liveInputs: null,
   });
 
   const simCacheRef = useRef<Map<string, SimulationResult>>(new Map());
-  const getSim = (p: CityParams, o: DistrictOverrides) => {
-    const key = stableKey({ p, o });
+  const getSim = (p: CityParams, o: DistrictOverrides, live: LiveInputs | null) => {
+    const key = stableKey({ p, o, liveLabel: live?.liveLabel ?? "synthetic", liveAt: live?.fetchedAtISO ?? "none" });
     const existing = simCacheRef.current.get(key);
     if (existing) return existing;
-    const created = runSimulation(p, o);
+    const created = runSimulation(p, o, live);
     simCacheRef.current.set(key, created);
     return created;
   };
 
-  const [resultB, setResultB] = useState<SimulationResult>(() => getSim(params, districtOverrides));
+  const [resultB, setResultB] = useState<SimulationResult>(() => getSim(params, districtOverrides, liveInputs));
 
   useEffect(() => {
     const id = window.setTimeout(() => {
-      setResultB(getSim(params, districtOverrides));
+      setResultB(getSim(params, districtOverrides, liveInputs));
     }, 180);
     return () => window.clearTimeout(id);
-  }, [params, districtOverrides]);
+  }, [params, districtOverrides, liveInputs]);
 
   useEffect(() => {
     let raf = 0;
@@ -93,8 +145,8 @@ export default function Page() {
   }, [isPlaying]);
 
   const resultA = useMemo(
-    () => getSim(pinnedA.params, pinnedA.overrides),
-    [pinnedA.params, pinnedA.overrides],
+    () => getSim(pinnedA.params, pinnedA.overrides, pinnedA.liveInputs),
+    [pinnedA.params, pinnedA.overrides, pinnedA.liveInputs],
   );
 
   const recs = useMemo(
@@ -105,11 +157,47 @@ export default function Page() {
         paramsB: params,
         overridesB: districtOverrides,
         selectedHour,
+        liveInputsB: liveInputs,
       }),
-    [resultA, resultB, params, districtOverrides, selectedHour],
+    [resultA, resultB, params, districtOverrides, selectedHour, liveInputs],
   );
 
   const budgetUsedM = useMemo(() => computeBudgetUsed(params, districtOverrides), [params, districtOverrides]);
+
+  const fetchLiveData = async (force = false) => {
+    if (liveFetchPending) return;
+    const now = Date.now();
+    if (!force && now - lastLiveFetchMsRef.current < 5 * 60 * 1000 && liveSeedCacheRef.current) {
+      setLiveInputs(buildLiveSeedInputs(liveSeedCacheRef.current, resultB));
+      setLiveSyncedAtISO(liveSeedCacheRef.current.timestampISO);
+      return;
+    }
+
+    setLiveFetchPending(true);
+    try {
+      const res = await fetch("/api/ercot/basic", { cache: "no-store" });
+      const payload = (await res.json()) as ErcotBasicResponse;
+      if (!res.ok || !payload.ok) throw new Error("basic feed unavailable");
+
+      liveSeedCacheRef.current = payload;
+      lastLiveFetchMsRef.current = now;
+      setLiveInputs(buildLiveSeedInputs(payload, resultB));
+      setLiveSyncedAtISO(payload.timestampISO);
+      setUiWarning("");
+    } catch {
+      setLiveMode(false);
+      setLiveInputs(null);
+      setUiWarning("");
+    } finally {
+      setLiveFetchPending(false);
+    }
+  };
+
+  useEffect(() => {
+    if (liveMode) void fetchLiveData(false);
+    if (!liveMode) setLiveInputs(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveMode]);
 
   const tryBudgetedChange = (deltaCostM: number, apply: () => void) => {
     const affordable = deltaCostM <= 0 || canAffordChange(params.budgetM, budgetUsedM, deltaCostM);
@@ -123,13 +211,15 @@ export default function Page() {
 
   const onBudgetedGlobalToggle = (key: "microgridEnabled" | "demandResponseEnabled") => {
     const isOn = params[key];
-    const delta = isOn ? - (key === "microgridEnabled" ? 1.5 : 0.2) : key === "microgridEnabled" ? 1.5 : 0.2;
+    const delta = isOn ? -(key === "microgridEnabled" ? 1.5 : 0.2) : key === "microgridEnabled" ? 1.5 : 0.2;
     tryBudgetedChange(delta, () => {
       setParamsState((prev) => ({ ...prev, [key]: !prev[key] }));
     });
   };
 
-  const updateSelectedDistrictOverride = (updater: (prev: DistrictOverrides[DistrictId]) => DistrictOverrides[DistrictId]) => {
+  const updateSelectedDistrictOverride = (
+    updater: (prev: DistrictOverrides[DistrictId]) => DistrictOverrides[DistrictId],
+  ) => {
     setDistrictOverrides((prev) => ({ ...prev, [selectedDistrictId]: updater(prev[selectedDistrictId]) }));
   };
 
@@ -182,13 +272,15 @@ export default function Page() {
     setIsPlaying(false);
     setSelectedDistrictId(districts[0].id);
     setBudgetWarning("");
+    setUiWarning("");
   };
 
   const pinAsA = () => {
     setPinnedA({
-      label: `${scenarios[selectedScenarioKey].name} (Pinned)`,
+      label: `${scenarios[selectedScenarioKey].name}${liveMode ? " + Live" : ""} (Pinned)`,
       params,
       overrides: districtOverrides,
+      liveInputs,
     });
   };
 
@@ -197,7 +289,10 @@ export default function Page() {
 
   const roiScore = useMemo(() => {
     const peakReduced = Math.max(0, resultA.city.peakLoad - resultB.city.peakLoad);
-    const overloadsAvoided = Math.max(0, resultA.summaryAtPeak.overloadZones.length - resultB.summaryAtPeak.overloadZones.length);
+    const overloadsAvoided = Math.max(
+      0,
+      resultA.summaryAtPeak.overloadZones.length - resultB.summaryAtPeak.overloadZones.length,
+    );
     const resilienceDelta = Math.max(0, resultB.resilienceScore - resultA.resilienceScore);
     return (peakReduced * 0.6 + overloadsAvoided * 8 + resilienceDelta * 0.25) / Math.max(0.1, budgetUsedM);
   }, [resultA, resultB, budgetUsedM]);
@@ -206,16 +301,19 @@ export default function Page() {
     const topRisk = resultB.summaryAtPeak.topRisk
       .map((r) => `${r.id} (${(r.prob * 100).toFixed(0)}%)`)
       .join(", ");
-    const topActions = recs.actions.map((a) => `${a.title}: ${a.impact.resilienceDelta >= 0 ? "+" : ""}${a.impact.resilienceDelta.toFixed(0)} resilience`).join(" | ");
+    const topActions = recs.actions
+      .map((a) => `${a.title}: ${a.impact.resilienceDelta >= 0 ? "+" : ""}${a.impact.resilienceDelta.toFixed(0)} resilience`)
+      .join(" | ");
     return [
       "CityTwin AI Ops Brief",
+      `Mode: ${liveMode ? liveInputs?.liveLabel ?? "Live" : "Synthetic"}`,
       `Peak Hour: T+${resultB.city.peakHour}h`,
       `Top Risk Districts: ${topRisk}`,
       `Budget Used: ${budgetUsedM.toFixed(2)}M / ${params.budgetM.toFixed(1)}M`,
       `Compare Delta: Peak ${recs.compare.peakDeltaMW.toFixed(1)} MW, Overloads ${recs.compare.overloadDelta}, Resilience ${recs.compare.resilienceDelta}`,
       `Top Actions: ${topActions}`,
     ].join("\n");
-  }, [resultB, recs, budgetUsedM, params.budgetM]);
+  }, [resultB, recs, budgetUsedM, params.budgetM, liveMode, liveInputs]);
 
   return (
     <Shell
@@ -236,24 +334,37 @@ export default function Page() {
           budgetUsedM={budgetUsedM}
           budgetM={params.budgetM}
           interventionsCount={interventionsCount}
+          liveMode={liveMode}
+          lastSyncedISO={liveSyncedAtISO}
+          onToggleLiveMode={() => setLiveMode((v) => !v)}
+          onRefreshLive={() => void fetchLiveData(true)}
+          liveRefreshing={liveFetchPending}
         />
       }
       left={
-        <InterventionConsole
-          params={params}
-          setParams={setParamsState}
-          selectedDistrictId={selectedDistrictId}
-          selectedOverride={selectedOverride}
-          onAddDistrictStorage={onAddDistrictStorage}
-          onAddDistrictCap={onAddDistrictCap}
-          onAddDistrictSolar={onAddDistrictSolar}
-          onToggleDistrictDr={onToggleDistrictDr}
-          onClearDistrictOverride={onClearDistrictOverride}
-          budgetUsedM={budgetUsedM}
-          roiScore={roiScore}
-          budgetWarning={budgetWarning}
-          onBudgetedGlobalToggle={onBudgetedGlobalToggle}
-        />
+        <div className="flex h-full flex-col gap-3">
+          {uiWarning && (
+            <div className="glass-panel border-rose-300/35 bg-rose-500/10 p-3 text-xs text-rose-200">
+              {uiWarning}
+            </div>
+          )}
+          <InterventionConsole
+            params={params}
+            setParams={setParamsState}
+            selectedDistrictId={selectedDistrictId}
+            selectedOverride={selectedOverride}
+            onAddDistrictStorage={onAddDistrictStorage}
+            onAddDistrictCap={onAddDistrictCap}
+            onAddDistrictSolar={onAddDistrictSolar}
+            onToggleDistrictDr={onToggleDistrictDr}
+            onClearDistrictOverride={onClearDistrictOverride}
+            budgetUsedM={budgetUsedM}
+            roiScore={roiScore}
+            budgetWarning={budgetWarning}
+            onBudgetedGlobalToggle={onBudgetedGlobalToggle}
+            liveMode={liveMode}
+          />
+        </div>
       }
       center={
         <HexCityMap
@@ -301,7 +412,7 @@ export default function Page() {
             compare={recs.compare}
             onPinAsA={pinAsA}
             labelA={pinnedA.label}
-            labelB={scenarios[selectedScenarioKey].name}
+            labelB={`${scenarios[selectedScenarioKey].name}${liveMode ? " + Live" : ""}`}
           />
         </div>
       }

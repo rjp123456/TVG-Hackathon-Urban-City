@@ -20,6 +20,10 @@ type TopBarProps = {
   budgetUsedM: number;
   budgetM: number;
   interventionsCount: number;
+  liveMode: boolean;
+  lastSyncedISO: string | null;
+  onRefreshLive: () => void;
+  liveRefreshing: boolean;
 };
 
 export function TopBar({
@@ -38,14 +42,23 @@ export function TopBar({
   budgetUsedM,
   budgetM,
   interventionsCount,
+  liveMode,
+  lastSyncedISO,
+  onRefreshLive,
+  liveRefreshing,
 }: TopBarProps) {
   return (
     <header className="glass-panel flex flex-col gap-4 p-4 md:p-5 xl:flex-row xl:items-center xl:justify-between">
       <div className="flex items-center gap-3">
-        <h1 className="text-xl font-semibold tracking-wide text-white">CityTwin AI</h1>
+        <h1 className="text-xl font-semibold tracking-wide text-white">CityTwin AI Austin</h1>
         <span className="inline-flex items-center rounded-full border border-emerald-400/40 bg-emerald-400/15 px-3 py-1 text-xs font-medium uppercase tracking-[0.2em] text-emerald-300">
           Live Simulation
         </span>
+        {liveMode && (
+          <span className="inline-flex items-center rounded-full border border-cyan-300/50 bg-cyan-300/12 px-3 py-1 text-xs text-cyan-200">
+            Live ERCOT Data - Updated {lastSyncedISO ? new Date(lastSyncedISO).toLocaleTimeString() : "now"}
+          </span>
+        )}
       </div>
 
       <div className="flex min-w-[340px] flex-1 flex-col gap-1 xl:max-w-[700px]">
@@ -106,6 +119,22 @@ export function TopBar({
         >
           Compare {compareMode ? "ON" : "OFF"}
         </button>
+
+        <button
+          type="button"
+          onClick={onRefreshLive}
+          disabled={liveRefreshing}
+          className="rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-200 transition enabled:hover:border-teal-300/70 disabled:opacity-50"
+        >
+          {liveRefreshing ? "Syncing..." : "Refresh"}
+        </button>
+
+        <div className="rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-slate-300">
+          <div>Last Synced</div>
+          <div className="text-sm font-semibold text-cyan-300">
+            {lastSyncedISO ? new Date(lastSyncedISO).toLocaleTimeString() : "-"}
+          </div>
+        </div>
 
         <div className="rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-xs text-slate-300">
           <div>Carbon Intensity</div>

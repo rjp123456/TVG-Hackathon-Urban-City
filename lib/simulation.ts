@@ -5,6 +5,7 @@ import {
   District,
   DistrictId,
   DistrictOverrides,
+  LiveInputs,
   SimulationResult,
 } from "@/types/city";
 
@@ -73,7 +74,7 @@ const eventSpike = (d: District, t: number, params: CityParams) => {
   return 0;
 };
 
-const capacityEffective = (
+const capacityEffectiveSynthetic = (
   d: District,
   t: number,
   params: CityParams,
@@ -127,6 +128,7 @@ const storageShave = (
 export const runSimulation = (
   params: CityParams,
   inputOverrides?: DistrictOverrides,
+  liveInputs?: LiveInputs | null,
 ): SimulationResult => {
   const overrides = inputOverrides ?? emptyOverrides();
 
@@ -147,6 +149,12 @@ export const runSimulation = (
   const carbonIntensity: number[] = [];
   const costIndex: number[] = [];
 
+  const totalBaseLoad = districts.reduce((s, d) => s + d.baseLoadMW, 0);
+  const totalBaseCap = districts.reduce((s, d) => s + d.baseCapacityMW, 0);
+
+  const loadShares = Object.fromEntries(districts.map((d) => [d.id, d.baseLoadMW / totalBaseLoad])) as Record<DistrictId, number>;
+  const capShares = Object.fromEntries(districts.map((d) => [d.id, d.baseCapacityMW / totalBaseCap])) as Record<DistrictId, number>;
+
   const globalShares = buildGlobalStorageShares(params, overrides);
 
   for (const t of HOURS) {
@@ -154,6 +162,9 @@ export const runSimulation = (
     let cityCap = 0;
     let solarSum = 0;
     let localDrCount = 0;
+
+    const liveDemandAtT = liveInputs?.demandCurveMW[t] ?? NaN;
+    const liveCapAtT = liveInputs?.capacityCurveMW[t] ?? NaN;
 
     for (const d of districts) {
       const o = overrides[d.id];
@@ -167,11 +178,25 @@ export const runSimulation = (
 
       const solarPen = clamp(d.solarPenetration + params.solarDelta + (o.solarBoost ?? 0), 0, 0.85);
       const solarMW = solarPen * d.baseLoadMW * 0.55 * solarCurve(t, params);
-
       const storageShaveMW = storageShave(d, t, params, overrides, globalShares);
-      const capMW = capacityEffective(d, t, params, o.capBoostMW ?? 0);
 
-      const loadMW = Math.max(0, baseMW + evMW + acMW + eventMW - solarMW - storageShaveMW);
+      let capMW: number;
+      let loadMW: number;
+
+      if (liveInputs && Number.isFinite(liveDemandAtT) && Number.isFinite(liveCapAtT)) {
+        const baseFromLive = liveDemandAtT * loadShares[d.id];
+        const localAdj = (evMW + acMW + eventMW - solarMW - storageShaveMW) * 0.45;
+        loadMW = Math.max(0, baseFromLive + localAdj);
+
+        capMW = liveCapAtT * capShares[d.id] + (o.capBoostMW ?? 0);
+        if (params.microgridEnabled && (d.id === "medical" || d.id === "downtown")) capMW += 18;
+        if (params.stormEnabled) capMW *= d.id === "waterfront" ? 0.95 : 0.98;
+        capMW = Math.max(1, capMW);
+      } else {
+        capMW = capacityEffectiveSynthetic(d, t, params, o.capBoostMW ?? 0);
+        loadMW = Math.max(0, baseMW + evMW + acMW + eventMW - solarMW - storageShaveMW);
+      }
+
       const stress = loadMW / capMW;
       const prob = clamp(sigmoid((stress - 0.85) * 8) + 0.05 * d.criticality, 0, 1);
 
@@ -198,16 +223,21 @@ export const runSimulation = (
     cityCapMW.push(cityCap);
     totalSolarMW.push(solarSum);
 
-    let ci = 380 - 140 * (solarSum / Math.max(1, cityLoad));
-    if (params.stormEnabled) ci += 30;
-    if (params.heatwaveEnabled) ci += 15;
-    carbonIntensity.push(clamp(ci, 180, 520));
+    if (liveInputs) {
+      carbonIntensity.push(liveInputs.carbonIntensityCurve[t] ?? 320);
+      costIndex.push(liveInputs.costIndexCurve[t] ?? 1.1);
+    } else {
+      let ci = 380 - 140 * (solarSum / Math.max(1, cityLoad));
+      if (params.stormEnabled) ci += 30;
+      if (params.heatwaveEnabled) ci += 15;
+      carbonIntensity.push(clamp(ci, 180, 520));
 
-    const peakPremium = 0.55 * (cityLoad / Math.max(1, cityCap)) ** 2;
-    const drCoverage = params.demandResponseEnabled ? 1 : localDrCount / districts.length;
-    const drDiscount = -0.1 * eveningPeakCurve(t) * drCoverage;
-    const solarDiscount = -0.08 * (solarSum / Math.max(1, cityLoad));
-    costIndex.push(clamp(1 + peakPremium + drDiscount + solarDiscount, 0.75, 2.2));
+      const peakPremium = 0.55 * (cityLoad / Math.max(1, cityCap)) ** 2;
+      const drCoverage = params.demandResponseEnabled ? 1 : localDrCount / districts.length;
+      const drDiscount = -0.1 * eveningPeakCurve(t) * drCoverage;
+      const solarDiscount = -0.08 * (solarSum / Math.max(1, cityLoad));
+      costIndex.push(clamp(1 + peakPremium + drDiscount + solarDiscount, 0.75, 2.2));
+    }
   }
 
   const peakLoad = Math.max(...cityLoadMW);

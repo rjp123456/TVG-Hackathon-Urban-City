@@ -36,6 +36,38 @@ export type DistrictOverride = {
 
 export type DistrictOverrides = Record<DistrictId, DistrictOverride>;
 
+export type LiveInputs = {
+  liveMode: true;
+  liveLabel: string;
+  fetchedAtISO: string;
+  demandCurveMW: number[];
+  capacityCurveMW: number[];
+  renewablesCurve: { windMW: number[]; solarMW: number[] } | null;
+  carbonIntensityCurve: number[];
+  costIndexCurve: number[];
+};
+
+export type ErcotForecastPoint = { hourISO: string; demandMW: number };
+export type ErcotOutagePoint = { hourISO: string; outagedMW: number };
+export type ErcotPricePoint = { intervalISO: string; settlementPoint: string; price: number };
+
+export type ErcotLiveBundle = {
+  ok: boolean;
+  fetchedAtISO: string;
+  austinProxy: { loadZone: "LZ_SOUTH"; hub: "HB_SOUTH" };
+  realtime?: {
+    timestampISO: string;
+    systemDemandMW: number;
+    systemCapacityMW: number;
+    windMW: number;
+    solarMW: number;
+  };
+  forecast72h?: { timestampISO: string; points: ErcotForecastPoint[] };
+  outages72h?: { timestampISO: string; loadZone: string; points: ErcotOutagePoint[] };
+  prices?: { timestampISO: string; points: ErcotPricePoint[] };
+  errors?: string[];
+};
+
 export type CityParams = {
   evAdoptionDelta: number;
   solarDelta: number;

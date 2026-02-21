@@ -27,6 +27,7 @@ type InterventionConsoleProps = {
   roiScore: number;
   budgetWarning: string;
   onBudgetedGlobalToggle: (key: "microgridEnabled" | "demandResponseEnabled") => void;
+  liveMode?: boolean;
 };
 
 const toggleRows: Array<{ key: ToggleKey; label: string; budgeted?: boolean }> = [
@@ -52,6 +53,7 @@ export function InterventionConsole({
   roiScore,
   budgetWarning,
   onBudgetedGlobalToggle,
+  liveMode,
 }: InterventionConsoleProps) {
   const [pulse, setPulse] = useState(false);
 
@@ -62,6 +64,11 @@ export function InterventionConsole({
       <section className="glass-panel p-4">
         <h2 className="text-sm uppercase tracking-[0.18em] text-emerald-300">Intervention Sandbox</h2>
         <p className="mt-1 text-xs text-slate-300">Tune global levers and district placements in real time.</p>
+        {liveMode && (
+          <p className="mt-1 text-[11px] text-cyan-200">
+            Real ERCOT curves active; local district distribution remains modeled.
+          </p>
+        )}
 
         <div className="mt-4 space-y-3 text-sm">
           <label className="block">

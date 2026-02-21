@@ -3,7 +3,7 @@ import { CityParams, District, DistrictId, ScenarioKey, ScenarioPreset } from "@
 export const districts: readonly District[] = [
   {
     id: "downtown",
-    name: "Downtown Core",
+    name: "Downtown + Rainey",
     q: 0,
     r: 0,
     baseLoadMW: 140,
@@ -16,7 +16,7 @@ export const districts: readonly District[] = [
   },
   {
     id: "industrial",
-    name: "Industrial Belt",
+    name: "East Industry + Airport",
     q: 1,
     r: 0,
     baseLoadMW: 165,
@@ -29,7 +29,7 @@ export const districts: readonly District[] = [
   },
   {
     id: "university",
-    name: "University Zone",
+    name: "UT + West Campus",
     q: 0,
     r: 1,
     baseLoadMW: 105,
@@ -42,7 +42,7 @@ export const districts: readonly District[] = [
   },
   {
     id: "medical",
-    name: "Medical District",
+    name: "Medical + Dell Seton",
     q: -1,
     r: 1,
     baseLoadMW: 120,
@@ -55,7 +55,7 @@ export const districts: readonly District[] = [
   },
   {
     id: "eastside",
-    name: "Eastside Residential",
+    name: "East Austin",
     q: -1,
     r: 0,
     baseLoadMW: 95,
@@ -68,7 +68,7 @@ export const districts: readonly District[] = [
   },
   {
     id: "north",
-    name: "North Suburbs",
+    name: "North Burnet + Domain",
     q: 0,
     r: -1,
     baseLoadMW: 88,
@@ -81,7 +81,7 @@ export const districts: readonly District[] = [
   },
   {
     id: "south",
-    name: "South Residential",
+    name: "South Lamar + SoCo",
     q: 1,
     r: -1,
     baseLoadMW: 92,
@@ -94,7 +94,7 @@ export const districts: readonly District[] = [
   },
   {
     id: "waterfront",
-    name: "Waterfront",
+    name: "Riverside + Lady Bird",
     q: -2,
     r: 1,
     baseLoadMW: 78,

@@ -13,6 +13,7 @@ import {
   CityParams,
   DistrictId,
   DistrictOverrides,
+  LiveInputs,
   RecommendationOutput,
   SimulationResult,
 } from "@/types/city";
@@ -133,8 +134,9 @@ export const runCounterfactuals = (args: {
   paramsB: CityParams;
   overridesB: DistrictOverrides;
   selectedHour: number;
+  liveInputsB?: LiveInputs | null;
 }) => {
-  const { resultA, resultB, paramsB, overridesB, selectedHour } = args;
+  const { resultA, resultB, paramsB, overridesB, selectedHour, liveInputsB } = args;
   const worstDistrictId = identifyWorstDistrict(resultB, selectedHour);
   const baseOverloads = overloadCountAtPeak(resultB);
   const basePeakRisk = peakRisk(resultB);
@@ -145,7 +147,7 @@ export const runCounterfactuals = (args: {
 
   const evaluated: ActionItem[] = candidates.map((candidate) => {
     const next = candidate.apply(paramsB, overridesB, worstDistrictId);
-    const simulated = runSimulation(next.params, next.overrides);
+    const simulated = runSimulation(next.params, next.overrides, liveInputsB ?? null);
 
     const peakLoadDeltaMW = simulated.city.peakLoad - resultB.city.peakLoad;
     const overloadDelta = overloadCountAtPeak(simulated) - baseOverloads;
@@ -223,8 +225,9 @@ export const buildRecommendations = (args: {
   paramsB: CityParams;
   overridesB: DistrictOverrides;
   selectedHour: number;
+  liveInputsB?: LiveInputs | null;
 }): RecommendationOutput => {
-  const { resultA, resultB, paramsB, overridesB, selectedHour } = args;
+  const { resultA, resultB, paramsB, overridesB, selectedHour, liveInputsB } = args;
   const { actions, compare, worstDistrictId } = runCounterfactuals(args);
 
   const worstAtSelected = districts
@@ -268,6 +271,12 @@ export const buildRecommendations = (args: {
   }
 
   const used = computeBudgetUsed(paramsB, overridesB);
+  if (liveInputsB) {
+    riskFeed.push({
+      type: "info",
+      text: `ERCOT demand curve indicates peak around T+${resultB.city.peakHour}h; LZ_SOUTH outage derates are reflected in capacity.`,
+    });
+  }
   riskFeed.push({
     type: "info",
     text: `Budget utilization ${used.toFixed(2)}M / ${paramsB.budgetM.toFixed(1)}M. ${used > paramsB.budgetM ? "Over allocation risk." : "Within approved cap."}`,
